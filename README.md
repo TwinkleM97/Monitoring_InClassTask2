@@ -25,7 +25,7 @@ This project demonstrates how to monitor business-specific and PostgreSQL databa
 | Active Products Count | ![Products](screenshots/lcbo_active_products_count.png) |
 | PostgreSQL Backends | ![Backends](screenshots/postgresql_backends.png) |
 | Dashboard View | ![Dashboard](screenshots/LCBO%20Metrics%20dashboard.png) |
-| pgAdmin Verification | ![pgAdmin](screenshots/pgadmin) |
+| pgAdmin Verification | ![pgAdmin](screenshots/pgadmin.png) |
 
 ---
 
