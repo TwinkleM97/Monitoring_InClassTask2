@@ -6,13 +6,12 @@ receivers:
         regex: '^<([0-9]+)>[0-9]+ (?P<timestamp>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?([zZ]|([\+-])([01]\d|2[0-3]):?([0-5]\d)?)?) (?P<container_id>\S+) (?P<container_name>\S+) [0-9]+ - -( (?P<body>.*))?'
         timestamp:
           parse_from: attributes.timestamp
-          layout: '%Y-%m-%dT%H:%M:%S.%LZ'
+          layout: "%Y-%m-%dT%H:%M:%S.%LZ"
       - type: move
         from: attributes["body"]
         to: body
       - type: remove
         field: attributes.timestamp
-        # please remove names from below if you want to collect logs from them
       - type: filter
         id: signoz_logs_filter
         expr: 'attributes.container_name matches "^signoz-(logspout|frontend|alertmanager|query-service|clickhouse|zookeeper)"'
@@ -30,10 +29,48 @@ receivers:
         endpoint: 0.0.0.0:14250
       thrift_http:
         endpoint: 0.0.0.0:14268
-      # thrift_compact:
-      #   endpoint: 0.0.0.0:6831
-      # thrift_binary:
-      #   endpoint: 0.0.0.0:6832
+  sqlquery:
+    driver: postgres
+    datasource: "host=db port=5432 user=devtedsuser password=devtedspass sslmode=disable database=lcbo"
+    queries:
+      - sql: "select count(*) as count FROM inventories WHERE store_id = 10 AND quantity = 157"
+        metrics:
+          - metric_name: "lcbo_inv_count"
+            value_column: "count"
+      - sql: "SELECT COUNT(*) as total_products FROM products WHERE is_discontinued = false"
+        metrics:
+          - metric_name: "lcbo_active_products_count"
+            value_column: "total_products"
+      
+      - sql: "SELECT COUNT(DISTINCT store_id) as store_count FROM inventories"
+        metrics:
+          - metric_name: "lcbo_active_stores_count"
+            value_column: "store_count"
+      
+  postgresql:
+    endpoint: db:5432
+    transport: tcp
+    username: devtedsuser
+    password: devtedspass
+    collection_interval: 10s
+    tls:
+      insecure: true
+    # Enhanced metrics collection
+    databases:
+      - lcbo
+    # Collecting additional metrics
+    metrics:
+      postgresql.blocks_read:
+        enabled: true
+      postgresql.commits:
+        enabled: true
+      postgresql.rollbacks:
+        enabled: true
+      postgresql.database.count:
+        enabled: true
+      postgresql.database.locks:
+        enabled: true
+
   hostmetrics:
     collection_interval: 30s
     root_path: /hostfs
@@ -49,15 +86,12 @@ receivers:
       global:
         scrape_interval: 60s
       scrape_configs:
-        # otel-collector internal metrics
         - job_name: otel-collector
           static_configs:
-          - targets:
-              - localhost:8888
-            labels:
-              job_name: otel-collector
-
-
+            - targets:
+                - localhost:8888
+              labels:
+                job_name: otel-collector
 processors:
   batch:
     send_batch_size: 10000
@@ -66,16 +100,32 @@ processors:
   signozspanmetrics/cumulative:
     metrics_exporter: clickhousemetricswrite
     metrics_flush_interval: 60s
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 50ms, 100ms, 250ms, 500ms, 1000ms, 1400ms, 2000ms, 5s, 10s, 20s, 40s, 60s ]
+    latency_histogram_buckets:
+      [
+        100us,
+        1ms,
+        2ms,
+        6ms,
+        10ms,
+        50ms,
+        100ms,
+        250ms,
+        500ms,
+        1000ms,
+        1400ms,
+        2000ms,
+        5s,
+        10s,
+        20s,
+        40s,
+        60s,
+      ]
     dimensions_cache_size: 100000
     dimensions:
       - name: service.namespace
         default: default
       - name: deployment.environment
         default: default
-      # This is added to ensure the uniqueness of the timeseries
-      # Otherwise, identical timeseries produced by multiple replicas of
-      # collectors result in incorrect APM metrics
       - name: signoz.collector.id
       - name: service.version
       - name: browser.platform
@@ -86,29 +136,34 @@ processors:
       - name: host.name
       - name: host.type
       - name: container.name
-  # memory_limiter:
-  #   # 80% of maximum memory up to 2G
-  #   limit_mib: 1500
-  #   # 25% of limit up to 2G
-  #   spike_limit_mib: 512
-  #   check_interval: 5s
-  #
-  #   # 50% of the maximum memory
-  #   limit_percentage: 50
-  #   # 20% of max memory usage spike expected
-  #   spike_limit_percentage: 20
-  # queued_retry:
-  #   num_workers: 4
-  #   queue_size: 100
-  #   retry_on_failure: true
+
   resourcedetection:
-    # Using OTEL_RESOURCE_ATTRIBUTES envvar, env detector adds custom labels.
-    detectors: [env, system] # include ec2 for AWS, gcp for GCP and azure for Azure.
+    detectors: [env, system]
     timeout: 2s
+
   signozspanmetrics/delta:
     metrics_exporter: clickhousemetricswrite
     metrics_flush_interval: 60s
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 50ms, 100ms, 250ms, 500ms, 1000ms, 1400ms, 2000ms, 5s, 10s, 20s, 40s, 60s ]
+    latency_histogram_buckets:
+      [
+        100us,
+        1ms,
+        2ms,
+        6ms,
+        10ms,
+        50ms,
+        100ms,
+        250ms,
+        500ms,
+        1000ms,
+        1400ms,
+        2000ms,
+        5s,
+        10s,
+        20s,
+        40s,
+        60s,
+      ]
     dimensions_cache_size: 100000
     aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
     enable_exp_histogram: true
@@ -117,9 +172,6 @@ processors:
         default: default
       - name: deployment.environment
         default: default
-      # This is added to ensure the uniqueness of the timeseries
-      # Otherwise, identical timeseries produced by multiple replicas of
-      # collectors result in incorrect APM metrics
       - name: signoz.collector.id
       - name: service.version
       - name: browser.platform
@@ -144,18 +196,20 @@ exporters:
     datasource: tcp://clickhouse:9000/signoz_traces
     docker_multi_node_cluster: ${DOCKER_MULTI_NODE_CLUSTER}
     low_cardinal_exception_grouping: ${LOW_CARDINAL_EXCEPTION_GROUPING}
+
   clickhousemetricswrite:
     endpoint: tcp://clickhouse:9000/signoz_metrics
     resource_to_telemetry_conversion:
       enabled: true
+
   clickhousemetricswrite/prometheus:
     endpoint: tcp://clickhouse:9000/signoz_metrics
+
   clickhouselogsexporter:
     dsn: tcp://clickhouse:9000/signoz_logs
     docker_multi_node_cluster: ${DOCKER_MULTI_NODE_CLUSTER}
     timeout: 10s
     use_new_schema: true
-  # logging: {}
 
 service:
   telemetry:
@@ -173,7 +227,7 @@ service:
       processors: [signozspanmetrics/cumulative, signozspanmetrics/delta, batch]
       exporters: [clickhousetraces]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, postgresql, sqlquery]
       processors: [batch]
       exporters: [clickhousemetricswrite]
     metrics/generic:
